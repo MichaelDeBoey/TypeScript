@@ -158,6 +158,58 @@ function ff1() {
     const x2 = apply('concat', 'str1', 'str2', 'str3' )
 }
 
+// Repro from #47368
+
+type ArgMap = { a: number, b: string };
+type Func<K extends keyof ArgMap> = (x: ArgMap[K]) => void;
+type Funcs = { [K in keyof ArgMap]: Func<K> };
+
+function f1<K extends keyof ArgMap>(funcs: Funcs, key: K, arg: ArgMap[K]) {
+    funcs[key](arg);
+}
+
+function f2<K extends keyof ArgMap>(funcs: Funcs, key: K, arg: ArgMap[K]) {
+    const func = funcs[key];  // Type Funcs[K]
+    func(arg);
+}
+
+function f3<K extends keyof ArgMap>(funcs: Funcs, key: K, arg: ArgMap[K]) {
+    const func: Func<K> = funcs[key];  // Error, Funcs[K] not assignable to Func<K>
+    func(arg);
+}
+
+function f4<K extends keyof ArgMap>(x: Funcs[keyof ArgMap], y: Funcs[K]) {
+    x = y;
+}
+
+// Repro from #47890
+
+interface MyObj {
+    someKey: {
+      name: string;
+    }
+    someOtherKey: {
+      name: number;
+    }
+}
+
+const ref: MyObj = {
+    someKey: { name: "" },
+    someOtherKey: { name: 42 }
+};
+
+function func<K extends keyof MyObj>(k: K): MyObj[K]['name'] | undefined {
+    const myObj: Partial<MyObj>[K] = ref[k];
+    if (myObj) {
+      return myObj.name;
+    }
+    const myObj2: Partial<MyObj>[keyof MyObj] = ref[k];
+    if (myObj2) {
+      return myObj2.name;
+    }
+    return undefined;
+}
+
 
 //// [correlatedUnions.js]
 "use strict";
@@ -243,6 +295,35 @@ function ff1() {
     }
     var x1 = apply('sum', 1, 2);
     var x2 = apply('concat', 'str1', 'str2', 'str3');
+}
+function f1(funcs, key, arg) {
+    funcs[key](arg);
+}
+function f2(funcs, key, arg) {
+    var func = funcs[key]; // Type Funcs[K]
+    func(arg);
+}
+function f3(funcs, key, arg) {
+    var func = funcs[key]; // Error, Funcs[K] not assignable to Func<K>
+    func(arg);
+}
+function f4(x, y) {
+    x = y;
+}
+var ref = {
+    someKey: { name: "" },
+    someOtherKey: { name: 42 }
+};
+function func(k) {
+    var myObj = ref[k];
+    if (myObj) {
+        return myObj.name;
+    }
+    var myObj2 = ref[k];
+    if (myObj2) {
+        return myObj2.name;
+    }
+    return undefined;
 }
 
 
@@ -348,3 +429,25 @@ declare const scrollEvent: {
     readonly callback: (ev: Event) => void;
 };
 declare function ff1(): void;
+declare type ArgMap = {
+    a: number;
+    b: string;
+};
+declare type Func<K extends keyof ArgMap> = (x: ArgMap[K]) => void;
+declare type Funcs = {
+    [K in keyof ArgMap]: Func<K>;
+};
+declare function f1<K extends keyof ArgMap>(funcs: Funcs, key: K, arg: ArgMap[K]): void;
+declare function f2<K extends keyof ArgMap>(funcs: Funcs, key: K, arg: ArgMap[K]): void;
+declare function f3<K extends keyof ArgMap>(funcs: Funcs, key: K, arg: ArgMap[K]): void;
+declare function f4<K extends keyof ArgMap>(x: Funcs[keyof ArgMap], y: Funcs[K]): void;
+interface MyObj {
+    someKey: {
+        name: string;
+    };
+    someOtherKey: {
+        name: number;
+    };
+}
+declare const ref: MyObj;
+declare function func<K extends keyof MyObj>(k: K): MyObj[K]['name'] | undefined;

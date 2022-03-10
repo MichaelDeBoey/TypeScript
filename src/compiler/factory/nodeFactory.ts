@@ -293,6 +293,8 @@ namespace ts {
             updateAssertClause,
             createAssertEntry,
             updateAssertEntry,
+            createImportTypeAssertionContainer,
+            updateImportTypeAssertionContainer,
             createNamespaceImport,
             updateNamespaceImport,
             createNamespaceExport,
@@ -1839,17 +1841,19 @@ namespace ts {
         }
 
         // @api
-        function createTypeQueryNode(exprName: EntityName) {
+        function createTypeQueryNode(exprName: EntityName, typeArguments?: readonly TypeNode[]) {
             const node = createBaseNode<TypeQueryNode>(SyntaxKind.TypeQuery);
             node.exprName = exprName;
+            node.typeArguments = typeArguments && parenthesizerRules().parenthesizeTypeArguments(typeArguments);
             node.transformFlags = TransformFlags.ContainsTypeScript;
             return node;
         }
 
         // @api
-        function updateTypeQueryNode(node: TypeQueryNode, exprName: EntityName) {
+        function updateTypeQueryNode(node: TypeQueryNode, exprName: EntityName, typeArguments?: readonly TypeNode[]) {
             return node.exprName !== exprName
-                ? update(createTypeQueryNode(exprName), node)
+                || node.typeArguments !== typeArguments
+                ? update(createTypeQueryNode(exprName, typeArguments), node)
                 : node;
         }
 
@@ -2036,9 +2040,24 @@ namespace ts {
         }
 
         // @api
-        function createImportTypeNode(argument: TypeNode, qualifier?: EntityName, typeArguments?: readonly TypeNode[], isTypeOf = false) {
+        function createImportTypeNode(argument: TypeNode, qualifier?: EntityName, typeArguments?: readonly TypeNode[], isTypeOf?: boolean): ImportTypeNode;
+        function createImportTypeNode(argument: TypeNode, assertions?: ImportTypeAssertionContainer, qualifier?: EntityName, typeArguments?: readonly TypeNode[], isTypeOf?: boolean): ImportTypeNode;
+        function createImportTypeNode(
+            argument: TypeNode,
+            qualifierOrAssertions?: EntityName | ImportTypeAssertionContainer,
+            typeArgumentsOrQualifier?: readonly TypeNode[] | EntityName,
+            isTypeOfOrTypeArguments?: boolean | readonly TypeNode[],
+            isTypeOf?: boolean
+        ) {
+            const assertion = qualifierOrAssertions && qualifierOrAssertions.kind === SyntaxKind.ImportTypeAssertionContainer ? qualifierOrAssertions : undefined;
+            const qualifier = qualifierOrAssertions && isEntityName(qualifierOrAssertions) ? qualifierOrAssertions
+                : typeArgumentsOrQualifier && !isArray(typeArgumentsOrQualifier) ? typeArgumentsOrQualifier : undefined;
+            const typeArguments = isArray(typeArgumentsOrQualifier) ? typeArgumentsOrQualifier : isArray(isTypeOfOrTypeArguments) ? isTypeOfOrTypeArguments : undefined;
+            isTypeOf = typeof isTypeOfOrTypeArguments === "boolean" ? isTypeOfOrTypeArguments : typeof isTypeOf === "boolean" ? isTypeOf : false;
+
             const node = createBaseNode<ImportTypeNode>(SyntaxKind.ImportType);
             node.argument = argument;
+            node.assertions = assertion;
             node.qualifier = qualifier;
             node.typeArguments = typeArguments && parenthesizerRules().parenthesizeTypeArguments(typeArguments);
             node.isTypeOf = isTypeOf;
@@ -2047,12 +2066,28 @@ namespace ts {
         }
 
         // @api
-        function updateImportTypeNode(node: ImportTypeNode, argument: TypeNode, qualifier: EntityName | undefined, typeArguments: readonly TypeNode[] | undefined, isTypeOf = node.isTypeOf) {
+        function updateImportTypeNode(node: ImportTypeNode, argument: TypeNode, qualifier: EntityName | undefined, typeArguments: readonly TypeNode[] | undefined, isTypeOf?: boolean | undefined): ImportTypeNode;
+        function updateImportTypeNode(node: ImportTypeNode, argument: TypeNode, assertions: ImportTypeAssertionContainer | undefined, qualifier: EntityName | undefined, typeArguments: readonly TypeNode[] | undefined, isTypeOf?: boolean | undefined): ImportTypeNode;
+        function updateImportTypeNode(
+            node: ImportTypeNode,
+            argument: TypeNode,
+            qualifierOrAssertions: EntityName | ImportTypeAssertionContainer | undefined,
+            typeArgumentsOrQualifier: readonly TypeNode[] | EntityName | undefined,
+            isTypeOfOrTypeArguments: boolean | readonly TypeNode[] | undefined,
+            isTypeOf?: boolean | undefined
+        ) {
+            const assertion = qualifierOrAssertions && qualifierOrAssertions.kind === SyntaxKind.ImportTypeAssertionContainer ? qualifierOrAssertions : undefined;
+            const qualifier = qualifierOrAssertions && isEntityName(qualifierOrAssertions) ? qualifierOrAssertions
+                : typeArgumentsOrQualifier && !isArray(typeArgumentsOrQualifier) ? typeArgumentsOrQualifier : undefined;
+            const typeArguments = isArray(typeArgumentsOrQualifier) ? typeArgumentsOrQualifier : isArray(isTypeOfOrTypeArguments) ? isTypeOfOrTypeArguments : undefined;
+            isTypeOf = typeof isTypeOfOrTypeArguments === "boolean" ? isTypeOfOrTypeArguments : typeof isTypeOf === "boolean" ? isTypeOf : node.isTypeOf;
+
             return node.argument !== argument
+                || node.assertions !== assertion
                 || node.qualifier !== qualifier
                 || node.typeArguments !== typeArguments
                 || node.isTypeOf !== isTypeOf
-                ? update(createImportTypeNode(argument, qualifier, typeArguments, isTypeOf), node)
+                ? update(createImportTypeNode(argument, assertion, qualifier, typeArguments, isTypeOf), node)
                 : node;
         }
 
@@ -4024,7 +4059,7 @@ namespace ts {
         }
 
         // @api
-        function createAssertEntry(name: AssertionKey, value: StringLiteral): AssertEntry {
+        function createAssertEntry(name: AssertionKey, value: Expression): AssertEntry {
             const node = createBaseNode<AssertEntry>(SyntaxKind.AssertEntry);
             node.name = name;
             node.value = value;
@@ -4033,10 +4068,26 @@ namespace ts {
         }
 
         // @api
-        function updateAssertEntry(node: AssertEntry, name: AssertionKey, value: StringLiteral): AssertEntry {
+        function updateAssertEntry(node: AssertEntry, name: AssertionKey, value: Expression): AssertEntry {
             return node.name !== name
                 || node.value !== value
                 ? update(createAssertEntry(name, value), node)
+                : node;
+        }
+
+        // @api
+        function createImportTypeAssertionContainer(clause: AssertClause, multiLine?: boolean): ImportTypeAssertionContainer {
+            const node = createBaseNode<ImportTypeAssertionContainer>(SyntaxKind.ImportTypeAssertionContainer);
+            node.assertClause = clause;
+            node.multiLine = multiLine;
+            return node;
+        }
+
+        // @api
+        function updateImportTypeAssertionContainer(node: ImportTypeAssertionContainer, clause: AssertClause, multiLine?: boolean): ImportTypeAssertionContainer {
+            return node.assertClause !== clause
+                || node.multiLine !== multiLine
+                ? update(createImportTypeAssertionContainer(clause, multiLine), node)
                 : node;
         }
 
@@ -4689,7 +4740,7 @@ namespace ts {
 
         // @api
         function createJSDocComment(comment?: string | NodeArray<JSDocComment> | undefined, tags?: readonly JSDocTag[] | undefined) {
-            const node = createBaseNode<JSDoc>(SyntaxKind.JSDocComment);
+            const node = createBaseNode<JSDoc>(SyntaxKind.JSDoc);
             node.comment = comment;
             node.tags = asNodeArray(tags);
             return node;
@@ -5885,7 +5936,7 @@ namespace ts {
          * @param visitor Optional callback used to visit any custom prologue directives.
          */
         function copyPrologue(source: readonly Statement[], target: Push<Statement>, ensureUseStrict?: boolean, visitor?: (node: Node) => VisitResult<Node>): number {
-            const offset = copyStandardPrologue(source, target, ensureUseStrict);
+            const offset = copyStandardPrologue(source, target, 0, ensureUseStrict);
             return copyCustomPrologue(source, target, offset, visitor);
         }
 
@@ -5901,12 +5952,13 @@ namespace ts {
          * Copies only the standard (string-expression) prologue-directives into the target statement-array.
          * @param source origin statements array
          * @param target result statements array
+         * @param statementOffset The offset at which to begin the copy.
          * @param ensureUseStrict boolean determining whether the function need to add prologue-directives
+         * @returns Count of how many directive statements were copied.
          */
-        function copyStandardPrologue(source: readonly Statement[], target: Push<Statement>, ensureUseStrict?: boolean): number {
+        function copyStandardPrologue(source: readonly Statement[], target: Push<Statement>, statementOffset = 0, ensureUseStrict?: boolean): number {
             Debug.assert(target.length === 0, "Prologue directives should be at the first statement in the target statements array");
             let foundUseStrict = false;
-            let statementOffset = 0;
             const numStatements = source.length;
             while (statementOffset < numStatements) {
                 const statement = source[statementOffset];
@@ -6413,7 +6465,7 @@ namespace ts {
         let prologues: UnparsedPrologue[] | undefined;
         let helpers: UnscopedEmitHelper[] | undefined;
         let referencedFiles: FileReference[] | undefined;
-        let typeReferenceDirectives: string[] | undefined;
+        let typeReferenceDirectives: FileReference[] | undefined;
         let libReferenceDirectives: FileReference[] | undefined;
         let prependChildren: UnparsedTextLike[] | undefined;
         let texts: UnparsedSourceText[] | undefined;
@@ -6434,7 +6486,13 @@ namespace ts {
                     referencedFiles = append(referencedFiles, { pos: -1, end: -1, fileName: section.data });
                     break;
                 case BundleFileSectionKind.Type:
-                    typeReferenceDirectives = append(typeReferenceDirectives, section.data);
+                    typeReferenceDirectives = append(typeReferenceDirectives, { pos: -1, end: -1, fileName: section.data });
+                    break;
+                case BundleFileSectionKind.TypeResolutionModeImport:
+                    typeReferenceDirectives = append(typeReferenceDirectives, { pos: -1, end: -1, fileName: section.data, resolutionMode: ModuleKind.ESNext });
+                    break;
+                case BundleFileSectionKind.TypeResolutionModeRequire:
+                    typeReferenceDirectives = append(typeReferenceDirectives, { pos: -1, end: -1, fileName: section.data, resolutionMode: ModuleKind.CommonJS });
                     break;
                 case BundleFileSectionKind.Lib:
                     libReferenceDirectives = append(libReferenceDirectives, { pos: -1, end: -1, fileName: section.data });
@@ -6495,6 +6553,8 @@ namespace ts {
                 case BundleFileSectionKind.NoDefaultLib:
                 case BundleFileSectionKind.Reference:
                 case BundleFileSectionKind.Type:
+                case BundleFileSectionKind.TypeResolutionModeImport:
+                case BundleFileSectionKind.TypeResolutionModeRequire:
                 case BundleFileSectionKind.Lib:
                     syntheticReferences = append(syntheticReferences, setTextRange(factory.createUnparsedSyntheticReference(section), section));
                     break;
